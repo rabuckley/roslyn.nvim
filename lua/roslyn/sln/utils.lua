@@ -26,6 +26,7 @@ end
 ---@class RoslynNvimRootDir
 ---@field projects? RoslynNvimDirectoryWithFiles
 ---@field solutions? string[]
+---@field solution_filters? string[]
 
 ---@param buffer integer
 ---@return RoslynNvimRootDir
@@ -33,6 +34,10 @@ function M.root(buffer)
     local broad_search = require("roslyn.config").get().broad_search
 
     local sln = vim.fs.root(buffer, function(name)
+        return name:match("%.sln$") ~= nil
+    end)
+
+    local slnf = vim.fs.root(buffer, function(name)
         return name:match("%.sln$") ~= nil
     end)
 
@@ -46,46 +51,56 @@ function M.root(buffer)
 
     local projects = csproj and { files = find_files_with_extension(csproj, ".csproj"), directory = csproj } or nil
 
-    if not sln then
-        return {
-            solutions = nil,
-            projects = projects,
-        }
-    end
+    if not broad_search then
+        if not sln and not slnf then
+            return {
+                solutions = nil,
+                solution_filters = nil,
+                projects = projects,
+            }
+        end
 
-    if broad_search then
-        local git_root = vim.fs.root(buffer, ".git")
-        local search_root = git_root and sln:match(git_root) and git_root or sln
-
-        local solutions = vim.fs.find(function(name, _)
-            return name:match("%.sln$")
-        end, { type = "file", limit = math.huge, path = search_root })
-        return {
-            solutions = solutions,
-            projects = projects,
-        }
-    else
         return {
             solutions = find_files_with_extension(sln, ".sln"),
+            solution_filters = find_files_with_extension(slnf, ".slnf"),
             projects = projects,
         }
     end
+
+    local git_root = vim.fs.root(buffer, ".git")
+    local search_root = git_root and sln:match(git_root) and git_root or sln
+
+    local solutions = vim.fs.find(function(name, _)
+        return name:match("%.sln$")
+    end, { type = "file", limit = math.huge, path = search_root })
+
+
+    local solution_filters = vim.fs.find(function(name, _)
+        return name:match("%.slnf$")
+    end, { type = "file", limit = math.huge, path = search_root })
+
+    return {
+        solutions = solutions,
+        solution_filters = solution_filters,
+        projects = projects,
+    }
 end
 
----Tries to predict which solutions to use if we found some
----returning the potentially predicted solution
+---Tries to predict which solution or solution filter to use if we found some
+---returning the potentially predicted solution/solution filter.
 ---Notifies the user if we still have multiple to choose from
 ---@param root RoslynNvimRootDir
----@return string?
-function M.predict_sln_file(root)
-    if not root.solutions then
-        return nil
+---@return boolean multiple_potential_targets, string? target
+function M.predict_target(root)
+    if not root.solutions and not root.solution_filters then
+        return true, nil
     end
 
     local config = require("roslyn.config").get()
+
     local solutions = vim.iter(root.solutions)
         :filter(function(solution)
-            if config.ignore_sln and config.ignore_sln(solution) then
+            if config.ignore_target and config.ignore_target(solution) then
                 return false
             end
             return not root.projects
@@ -95,21 +110,36 @@ function M.predict_sln_file(root)
         end)
         :totable()
 
-    if #solutions > 1 then
-        local chosen = config.choose_sln and config.choose_sln(solutions) or nil
-        if chosen then
-            return chosen
-        end
+    local solution_filters = vim.iter(root.solution_filters)
+        :filter(function(solution_filter)
+            if config.ignore_target and config.ignore_target(solution_filter) then
+                return false
+            end
+            return not root.projects
+                or vim.iter(root.projects.files):any(function(csproj_file)
+                    return require("roslyn.sln.api").exists_in_solution_filter(solution_filter, csproj_file)
+                end)
+        end)
+        :totable()
 
-        vim.notify(
-            "Multiple sln files found. Use `:Roslyn target` to select or change target for buffer",
-            vim.log.levels.INFO,
-            { title = "roslyn.nvim" }
-        )
-        return nil
-    else
-        return solutions[1]
+    if #solutions == 1 and #solution_filters == 0 then
+        return false, solutions[1]
     end
+
+    local chosen = config.choose_target and
+        config.choose_target(vim.iter({ solutions, solution_filters }):flatten():totable()) or nil
+
+    if chosen then
+        return false, chosen
+    end
+
+    vim.notify(
+        "Multiple target files found. Use `:Roslyn target` to select or change target for buffer",
+        vim.log.levels.INFO,
+        { title = "roslyn.nvim" }
+    )
+
+    return true, nil
 end
 
 return M

@@ -5,8 +5,8 @@ local M = {}
 ---@field exe string[]
 ---@field args string[]
 ---@field config vim.lsp.ClientConfig
----@field choose_sln? fun(solutions: string[]): string?
----@field ignore_sln? fun(solution: string): boolean
+---@field choose_target? fun(solutions: string[]): string?
+---@field ignore_target? fun(solution: string): boolean
 ---@field broad_search boolean
 ---@field lock_target boolean
 
@@ -78,8 +78,8 @@ local roslyn_config = {
     config = {
         capabilities = default_capabilities(),
     },
-    choose_sln = nil,
-    ignore_sln = nil,
+    choose_target = nil,
+    ignore_target = nil,
     broad_search = false,
     lock_target = false,
 }

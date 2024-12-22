@@ -27,7 +27,7 @@ function M.setup(config)
 
     vim.api.nvim_create_autocmd({ "FileType" }, {
         group = vim.api.nvim_create_augroup("Roslyn", { clear = true }),
-        pattern = {"cs", "roslyn-source-generated://*"},
+        pattern = { "cs", "roslyn-source-generated://*" },
         callback = function(opt)
             if not valid_buffer(opt.buf) then
                 return
@@ -43,10 +43,15 @@ function M.setup(config)
                 local root = utils.root(opt.buf)
                 vim.b.roslyn_root = root
 
-                local solution = utils.predict_sln_file(root)
-                if solution then
-                    vim.g.roslyn_nvim_selected_solution = solution
-                    return roslyn_lsp.start(opt.buf, vim.fs.dirname(solution), roslyn_lsp.on_init_sln)
+                local multiple_potential_targets, target = utils.predict_target(root)
+
+                if multiple_potential_targets then
+                    return
+                end
+
+                if target then
+                    vim.g.roslyn_nvim_selected_solution = target
+                    return roslyn_lsp.start(opt.buf, vim.fs.dirname(target), roslyn_lsp.on_init_sln)
                 elseif root.projects then
                     local dir = root.projects.directory
                     return roslyn_lsp.start(opt.buf, dir, roslyn_lsp.on_init_project(root.projects.files))
