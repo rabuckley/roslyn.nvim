@@ -62,7 +62,19 @@ local subcommand_tbl = {
 
             local roslyn_lsp = require("roslyn.lsp")
 
-            local targets = vim.iter({ root.solutions, root.solution_filters }):flatten():totable()
+            local solutions = vim.iter(root.solutions):filter(function(solution)
+                return not root.projects or vim.iter(root.projects.files):any(function(project)
+                    return require("roslyn.sln.api").exists_in_solution(solution, project)
+                end)
+            end):totable()
+
+            local solution_filters = vim.iter(root.solution_filters):filter(function(solution_filter)
+                return not root.projects or vim.iter(root.projects.files):any(function(project)
+                    return require("roslyn.sln.api").exists_in_solution_filter(solution_filter, project)
+                end)
+            end):totable()
+
+            local targets = vim.iter({ solutions, solution_filters }):flatten():totable()
 
             vim.ui.select(targets or {}, { prompt = "Select target solution: " }, function(file)
                 if not file then
