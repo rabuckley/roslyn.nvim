@@ -63,16 +63,29 @@ local subcommand_tbl = {
             local roslyn_lsp = require("roslyn.lsp")
 
             local targets = vim.iter({ root.solutions, root.solution_filters }):flatten():totable()
-            vim.ui.select(targets or {}, { prompt = "Select target solution: " }, function(file)
-                if not file then
-                    return
-                end
 
-                vim.lsp.stop_client(vim.lsp.get_clients({ name = "roslyn" }), true)
-                vim.g.roslyn_nvim_selected_solution = file
-                local sln_dir = vim.fs.dirname(file)
-                roslyn_lsp.start(bufnr, assert(sln_dir), roslyn_lsp.on_init_sln)
-            end)
+            local pickers = require("telescope.pickers")
+            local finders = require("telescope.finders")
+            local conf = require("telescope.config").values
+            local actions = require("telescope.actions")
+            local action_state = require("telescope.actions.state")
+
+            pickers.new({}, {
+                prompt_title = "Select a target",
+                finder = finders.new_table { results = targets, },
+                sorter = conf.generic_sorter(),
+                attach_mappings = function(prompt_bufnr)
+                    actions.select_default:replace(function()
+                        local selection = action_state.get_selected_entry()
+                        actions.close(prompt_bufnr)
+                        vim.lsp.stop_client(vim.lsp.get_clients({ name = "roslyn" }), true)
+                        vim.g.roslyn_nvim_selected_solution = selection.value
+                        local sln_dir = vim.fs.dirname(selection.value)
+                        roslyn_lsp.start(bufnr, assert(sln_dir), roslyn_lsp.on_init_sln)
+                    end)
+                    return true
+                end,
+            }):find()
         end,
     },
 }
